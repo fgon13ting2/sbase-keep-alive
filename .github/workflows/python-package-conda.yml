@@ -24,6 +24,14 @@ jobs:
           SUPABASE_KEY_4: ${{ secrets.SUPABASE_KEY_4 }}
           SUPABASE_URL_5: ${{ secrets.SUPABASE_URL_5 }}
           SUPABASE_KEY_5: ${{ secrets.SUPABASE_KEY_5 }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_WEBHOOK_TH_1: ${{ secrets.DISCORD_WEBHOOK_TH_1 }}
+          DISCORD_WEBHOOK_TH_2: ${{ secrets.DISCORD_WEBHOOK_TH_2 }}
+          DISCORD_WEBHOOK_TH_3: ${{ secrets.DISCORD_WEBHOOK_TH_3 }}
+          DISCORD_WEBHOOK_TH_4: ${{ secrets.DISCORD_WEBHOOK_TH_4 }}
+          DISCORD_WEBHOOK_TH_5: ${{ secrets.DISCORD_WEBHOOK_TH_5 }}
+          DISCORD_ONLY_ON_FAILURE: ${{ secrets.DISCORD_ONLY_ON_FAILURE }}
+          DISCORD_PING_ALL: ${{ secrets.DISCORD_PING_ALL }}
           KEEP_ALIVE_TABLE: ${{ secrets.KEEP_ALIVE_TABLE || 'keep-alive' }}
           KEEP_ALIVE_COLUMN: ${{ secrets.KEEP_ALIVE_COLUMN || 'name' }}
         run: python3 scripts/keep-alive.py
