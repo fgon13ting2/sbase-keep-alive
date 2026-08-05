@@ -84,10 +84,12 @@ def get_channel_name(webhook_url):
         return "unknown"
 
 
-def send_discord_webhook(webhook_url, results, failed, ping_all):
-    """Send to one specific webhook."""
+def send_discord_webhook(webhook_url, results, failed, ping_all, thread_name=None):
+    """Send to one specific webhook/thread."""
     total = len(results)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    now = datetime.now(timezone.utc)
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_display = now.strftime("%Y-%m-%d %H:%M:%S UTC")
     channel = get_channel_name(webhook_url)
 
     if failed == 0:
@@ -108,12 +110,17 @@ def send_discord_webhook(webhook_url, results, failed, ping_all):
     embed = {
         "title": title,
         "color": color,
-        "timestamp": now,
+        "timestamp": now_iso,
         "fields": fields,
-        "footer": {"text": f"Table: {TABLE} | Column: {COLUMN} | {now}"},
+        "footer": {"text": f"Table: {TABLE} | Column: {COLUMN} | {now_display}"},
     }
 
     payload = {"embeds": [embed]}
+
+    # Forum channel needs thread_name or thread_id
+    if thread_name:
+        payload["thread_name"] = thread_name
+
     if failed > 0 and ping_all:
         payload["content"] = "@everyone"
 
@@ -122,7 +129,10 @@ def send_discord_webhook(webhook_url, results, failed, ping_all):
         req = urllib.request.Request(
             webhook_url,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "SupabaseKeepAlive/1.0",
+            },
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -140,25 +150,36 @@ def send_discord(results, failed):
         return
 
     # Group results by thread
-    # DISCORD_WEBHOOK_TH_1 → thread ID for project-1, etc.
-    # If project has no TH_, goes to main channel (no thread)
+    # DISCORD_WEBHOOK_TH_1 → thread_id for project-1 (post to existing thread)
+    # If TH_ has no value → create new post in forum with thread_name (if NC_ set)
     groups: dict[str, list] = {}
 
     for i, r in enumerate(results, start=1):
         thread_id = os.environ.get(f"DISCORD_WEBHOOK_TH_{i}", "").strip()
+        if not thread_id:
+            thread_id = "__new__"  # fallback: create new post
 
         if thread_id not in groups:
             groups[thread_id] = []
         groups[thread_id].append(r)
 
+    # default thread_name for new posts
+    default_thread_name = os.environ.get("DISCORD_THREAD_NAME", "Supabase Keep-Alive")
+
     # Kirim per thread/group
     for thread_id, group_results in groups.items():
         url = DISCORD_WEBHOOK
-        if thread_id:
+        thread_name = None
+
+        if thread_id == "__new__":
+            # Forum channel: bikin post baru
+            thread_name = default_thread_name
+        else:
+            # Post ke thread yang udah ada
             url = f"{DISCORD_WEBHOOK}?thread_id={thread_id}"
 
         group_failed = sum(1 for r in group_results if r["status"] != "ok")
-        send_discord_webhook(url, group_results, group_failed, DISCORD_PING_ALL)
+        send_discord_webhook(url, group_results, group_failed, DISCORD_PING_ALL, thread_name)
 
 
 def main():

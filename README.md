@@ -10,7 +10,14 @@ GitHub Actions cron tiap hari → query REST API Supabase → project tetap akti
 
 ## Setup
 
-1. **Push repo ini ke GitHub**
+1. **Buat workflow file di GitHub**  
+   Karena SSH push error, buat manual lewat GitHub web:
+
+   - Buka `https://github.com/fgon13ting2/sbase-keep-alive`
+   - Klik **Add file → Create new file**
+   - Nama file: `.github/workflows/keep-alive.yml`
+   - Copy-paste isi workflow (lihat bawah)
+   - Klik **Commit new file**
 
 2. **Bikin tabel di setiap Supabase project** (sekali aja):
 ```sql
@@ -55,8 +62,41 @@ python3 scripts/keep-alive.py
 ## Struktur
 
 ```
-supabase-keep-alive/
+sbase-keep-alive/
 ├── .github/workflows/keep-alive.yml
 ├── scripts/keep-alive.py
+├── .gitignore
 └── README.md
+```
+
+## Workflow YAML (copy-paste ke GitHub)
+
+```yaml
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    - cron: '0 6 * * *'      # Daily 06:00 UTC
+  workflow_dispatch:          # Manual trigger
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping semua project Supabase
+        env:
+          SUPABASE_URL_1: ${{ secrets.SUPABASE_URL_1 }}
+          SUPABASE_KEY_1: ${{ secrets.SUPABASE_KEY_1 }}
+          SUPABASE_URL_2: ${{ secrets.SUPABASE_URL_2 }}
+          SUPABASE_KEY_2: ${{ secrets.SUPABASE_KEY_2 }}
+          SUPABASE_URL_3: ${{ secrets.SUPABASE_URL_3 }}
+          SUPABASE_KEY_3: ${{ secrets.SUPABASE_KEY_3 }}
+          SUPABASE_URL_4: ${{ secrets.SUPABASE_URL_4 }}
+          SUPABASE_KEY_4: ${{ secrets.SUPABASE_KEY_4 }}
+          SUPABASE_URL_5: ${{ secrets.SUPABASE_URL_5 }}
+          SUPABASE_KEY_5: ${{ secrets.SUPABASE_KEY_5 }}
+          KEEP_ALIVE_TABLE: ${{ secrets.KEEP_ALIVE_TABLE || 'keep-alive' }}
+          KEEP_ALIVE_COLUMN: ${{ secrets.KEEP_ALIVE_COLUMN || 'name' }}
+        run: python3 scripts/keep-alive.py
 ```
