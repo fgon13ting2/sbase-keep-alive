@@ -8,8 +8,10 @@ on:
 jobs:
   keep-alive:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Ping semua project Supabase
         env:
           SUPABASE_URL_1: ${{ secrets.SUPABASE_URL_1 }}
@@ -22,6 +24,6 @@ jobs:
           SUPABASE_KEY_4: ${{ secrets.SUPABASE_KEY_4 }}
           SUPABASE_URL_5: ${{ secrets.SUPABASE_URL_5 }}
           SUPABASE_KEY_5: ${{ secrets.SUPABASE_KEY_5 }}
-          KEEP_ALIVE_TABLE: ${{ secrets.KEEP_ALIVE_TABLE }}
-          KEEP_ALIVE_COLUMN: ${{ secrets.KEEP_ALIVE_COLUMN }}
+          KEEP_ALIVE_TABLE: ${{ secrets.KEEP_ALIVE_TABLE || 'keep-alive' }}
+          KEEP_ALIVE_COLUMN: ${{ secrets.KEEP_ALIVE_COLUMN || 'name' }}
         run: python3 scripts/keep-alive.py
