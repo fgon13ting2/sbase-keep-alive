@@ -57,7 +57,7 @@ def get_projects():
 
 
 def ping_project(project):
-    rest_url = f"{project['url']}/rest/v1/{TABLE}?select={COLUMN}&limit=1"
+    rest_url = f"{project['url']}/rest/v1/{TABLE}?select=id,{COLUMN}&limit=1"
     req = urllib.request.Request(rest_url)
     req.add_header("apikey", project["key"])
     req.add_header("Authorization", f"Bearer {project['key']}")
@@ -89,8 +89,10 @@ def ping_project(project):
         }
 
     # ponytail: best-effort WRITE setelah SELECT supaya activity "nyata".
-    # - Tabel kosong (0 row) -> INSERT dulu 1 row, lalu update (self-healing:
-    #   tabel yang belum pernah disetup pun jadi aman tanpa SQL manual)
+    # - SELECT include `id` supaya PATCH bisa pakai WHERE (tanpa WHERE,
+    #   PostgREST error 400 "UPDATE requires a WHERE clause" -> no-op).
+    # - Tabel kosong -> INSERT (return=representation) ambil id, lalu update
+    #   (self-healing: tabel yang belum pernah disetup pun jadi aman).
     # - RLS nolak tulis (401/403/409) -> tetap bukan error: SELECT kehitung.
     wrote = "no"
     try:
@@ -100,22 +102,30 @@ def ping_project(project):
             "Authorization": f"Bearer {project['key']}",
             "Content-Type": "application/json",
         }
-        if not data:
+        row_id = None
+        if data and isinstance(data[0], dict):
+            row_id = data[0].get("id")
+        if row_id is None and not data:
             body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
             req_ins = urllib.request.Request(
                 f"{project['url']}/rest/v1/{TABLE}",
-                data=body, method="POST", headers=hdrs,
+                data=body, method="POST",
+                headers=dict(hdrs, Prefer="return=representation"),
             )
-            with urllib.request.urlopen(req_ins, timeout=15):
+            with urllib.request.urlopen(req_ins, timeout=15) as resp_ins:
+                ins = json.loads(resp_ins.read())
                 wrote = "insert"
-        body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
-        req_up = urllib.request.Request(
-            f"{project['url']}/rest/v1/{TABLE}",
-            data=body, method="PATCH",
-            headers=dict(hdrs, Prefer="return=minimal"),
-        )
-        with urllib.request.urlopen(req_up, timeout=15):
-            wrote = "insert+update" if wrote == "insert" else "update"
+                if ins and isinstance(ins, list) and isinstance(ins[0], dict):
+                    row_id = ins[0].get("id")
+        if row_id is not None:
+            body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
+            req_up = urllib.request.Request(
+                f"{project['url']}/rest/v1/{TABLE}?id=eq.{row_id}",
+                data=body, method="PATCH",
+                headers=dict(hdrs, Prefer="return=minimal"),
+            )
+            with urllib.request.urlopen(req_up, timeout=15):
+                wrote = "insert+update" if wrote == "insert" else "update"
     except Exception:
         pass  # tulis ditolak = oke, baca sudah dihitung sebagai activity
 
