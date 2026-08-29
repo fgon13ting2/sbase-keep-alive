@@ -2,7 +2,8 @@ name: Supabase Keep-Alive
 
 on:
   schedule:
-    - cron: '0 6 * * *'      # Daily 06:00 UTC
+    - cron: '0 6 * * *'       # Daily 06:00 UTC
+    - cron: '0 18 * * *'      # Daily 18:00 UTC (cadangan kalau 1 slot di-skip GitHub)
   workflow_dispatch:          # Manual trigger
 
 jobs:
