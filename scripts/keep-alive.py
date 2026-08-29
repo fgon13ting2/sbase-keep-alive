@@ -53,13 +53,15 @@ def ping_project(project):
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        # 540 = status code resmi "project paused" dari Supabase
+        if e.code == 540:
             return {
                 "project": project["name"],
-                "status": "ok",
-                "rows": len(data),
-                "code": resp.status,
+                "status": "paused",
+                "message": "PROJECT PAUSED — buka Supabase Dashboard → Resume project!",
+                "code": e.code,
             }
-    except urllib.error.HTTPError as e:
         return {
             "project": project["name"],
             "status": "error",
@@ -73,6 +75,37 @@ def ping_project(project):
             "message": str(e),
             "code": 0,
         }
+
+    # ponytail: best-effort WRITE setelah SELECT — update ringan ke kolom
+    # keep-alive supaya activity "nyata" (tulis), bukan cuma baca. Kalau RLS
+    # nolak tulis (401/403/409), tetap bukan error: SELECT-nya udah kehitung.
+    wrote = False
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
+        req2 = urllib.request.Request(
+            f"{project['url']}/rest/v1/{TABLE}",
+            data=body,
+            method="PATCH",
+            headers={
+                "apikey": project["key"],
+                "Authorization": f"Bearer {project['key']}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+        )
+        with urllib.request.urlopen(req2, timeout=15):
+            wrote = True
+    except Exception:
+        pass  # tulis ditolak = oke, baca sudah dihitung sebagai activity
+
+    return {
+        "project": project["name"],
+        "status": "ok",
+        "rows": len(data),
+        "code": 200,
+        "wrote": wrote,
+    }
 
 
 def get_channel_name(webhook_url):
@@ -96,14 +129,22 @@ def send_discord_webhook(webhook_url, results, failed, ping_all, thread_name=Non
         color = 0x00FF00
         title = f":white_check_mark: Supabase Keep-Alive — All {total} OK  ({channel})"
     else:
-        color = 0xFF0000
-        title = f":warning: Supabase Keep-Alive — {failed}/{total} FAILED  ({channel})"
+        paused = [r["project"] for r in results if r["status"] == "paused"]
+        if paused:
+            color = 0xFF0000
+            title = f":red_circle: SUPERGENTING — PROJECT PAUSED: {', '.join(paused)}  ({channel})"
+        else:
+            color = 0xFF0000
+            title = f":warning: Supabase Keep-Alive — {failed}/{total} FAILED  ({channel})"
 
     fields = []
     for r in results:
-        icon = ":white_check_mark:" if r["status"] == "ok" else ":x:"
+        icon = ":white_check_mark:" if r["status"] == "ok" else (
+            ":red_circle:" if r["status"] == "paused" else ":x:")
         value = f"Status: `{r['status'].upper()}` | Code: `{r['code']}`"
-        if r["status"] == "error":
+        if r.get("wrote") is not None and r["status"] == "ok":
+            value += f" | Write: `{'ya' if r['wrote'] else 'no (baca saja)'}`"
+        if r["status"] in ("error", "paused"):
             value += f"\n```{r['message'][:256]}```"
         fields.append({"name": f"{icon} {r['project']}", "value": value, "inline": False})
 
@@ -198,9 +239,10 @@ def main():
 
     failed = 0
     for r in results:
-        icon = "OK" if r["status"] == "ok" else "FAIL"
-        print(f"  [{icon}] {r['project']}")
-        if r["status"] == "error":
+        icon = "OK" if r["status"] == "ok" else ("PAUSED" if r["status"] == "paused" else "FAIL")
+        extra = f" [write={'ya' if r.get('wrote') else 'no'}]" if r["status"] == "ok" else ""
+        print(f"  [{icon}] {r['project']}{extra}")
+        if r["status"] in ("error", "paused"):
             print(f"         {r['message']}")
             failed += 1
 
