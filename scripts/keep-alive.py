@@ -20,6 +20,18 @@ import urllib.error
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+# ponytail: load .env dari root repo / cwd untuk test lokal — env vars asli
+# selalu menang (setdefault); di GitHub Actions .env tidak ada, jadi no-op.
+for _dir in (os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.getcwd()):
+    _p = os.path.join(_dir, ".env")
+    if os.path.isfile(_p):
+        for _l in open(_p):
+            _l = _l.strip()
+            if _l and not _l.startswith("#") and "=" in _l:
+                _k, _v = _l.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+        break
+
 TABLE = os.environ.get("KEEP_ALIVE_TABLE", "keep-alive")
 COLUMN = os.environ.get("KEEP_ALIVE_COLUMN", "name")
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
