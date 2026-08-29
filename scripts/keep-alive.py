@@ -76,26 +76,34 @@ def ping_project(project):
             "code": 0,
         }
 
-    # ponytail: best-effort WRITE setelah SELECT — update ringan ke kolom
-    # keep-alive supaya activity "nyata" (tulis), bukan cuma baca. Kalau RLS
-    # nolak tulis (401/403/409), tetap bukan error: SELECT-nya udah kehitung.
-    wrote = False
+    # ponytail: best-effort WRITE setelah SELECT supaya activity "nyata".
+    # - Tabel kosong (0 row) -> INSERT dulu 1 row, lalu update (self-healing:
+    #   tabel yang belum pernah disetup pun jadi aman tanpa SQL manual)
+    # - RLS nolak tulis (401/403/409) -> tetap bukan error: SELECT kehitung.
+    wrote = "no"
     try:
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        hdrs = {
+            "apikey": project["key"],
+            "Authorization": f"Bearer {project['key']}",
+            "Content-Type": "application/json",
+        }
+        if not data:
+            body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
+            req_ins = urllib.request.Request(
+                f"{project['url']}/rest/v1/{TABLE}",
+                data=body, method="POST", headers=hdrs,
+            )
+            with urllib.request.urlopen(req_ins, timeout=15):
+                wrote = "insert"
         body = json.dumps({COLUMN: f"keep-alive {stamp}"}).encode("utf-8")
-        req2 = urllib.request.Request(
+        req_up = urllib.request.Request(
             f"{project['url']}/rest/v1/{TABLE}",
-            data=body,
-            method="PATCH",
-            headers={
-                "apikey": project["key"],
-                "Authorization": f"Bearer {project['key']}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal",
-            },
+            data=body, method="PATCH",
+            headers=dict(hdrs, Prefer="return=minimal"),
         )
-        with urllib.request.urlopen(req2, timeout=15):
-            wrote = True
+        with urllib.request.urlopen(req_up, timeout=15):
+            wrote = "insert+update" if wrote == "insert" else "update"
     except Exception:
         pass  # tulis ditolak = oke, baca sudah dihitung sebagai activity
 
@@ -143,7 +151,8 @@ def send_discord_webhook(webhook_url, results, failed, ping_all, thread_name=Non
             ":red_circle:" if r["status"] == "paused" else ":x:")
         value = f"Status: `{r['status'].upper()}` | Code: `{r['code']}`"
         if r.get("wrote") is not None and r["status"] == "ok":
-            value += f" | Write: `{'ya' if r['wrote'] else 'no (baca saja)'}`"
+            w = r["wrote"]
+            value += f" | Write: `{w if w != 'no' else 'no (baca saja)'}`"
         if r["status"] in ("error", "paused"):
             value += f"\n```{r['message'][:256]}```"
         fields.append({"name": f"{icon} {r['project']}", "value": value, "inline": False})
@@ -240,7 +249,7 @@ def main():
     failed = 0
     for r in results:
         icon = "OK" if r["status"] == "ok" else ("PAUSED" if r["status"] == "paused" else "FAIL")
-        extra = f" [write={'ya' if r.get('wrote') else 'no'}]" if r["status"] == "ok" else ""
+        extra = f" [write={r.get('wrote')}]" if r["status"] == "ok" else ""
         print(f"  [{icon}] {r['project']}{extra}")
         if r["status"] in ("error", "paused"):
             print(f"         {r['message']}")
